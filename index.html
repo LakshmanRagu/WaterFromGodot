@@ -1,0 +1,1677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom/StylizedWaterURP - Day & Night WebGL Inspector</title>
+    <style>
+        :root {
+            --bg-panel: rgba(15, 18, 26, 0.88);
+            --bg-section: rgba(26, 31, 44, 0.75);
+            --accent: #38bdf8;
+            --accent-warm: #fb923c;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #060911;
+            color: var(--text-main);
+            user-select: none;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+
+        /* Top Time-of-Day Quick Bar */
+        #time-bar {
+            position: fixed;
+            top: 12px;
+            left: 14px;
+            background: var(--bg-panel);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+            z-index: 10;
+        }
+
+        .clock-badge {
+            font-family: "JetBrains Mono", "Fira Code", monospace;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent);
+            background: rgba(0, 0, 0, 0.35);
+            padding: 5px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            min-width: 96px;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .preset-group {
+            display: flex;
+            gap: 5px;
+        }
+
+        /* Inspector Sidebar */
+        #inspector {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            bottom: 12px;
+            width: 375px;
+            background: var(--bg-panel);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+            z-index: 10;
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        #inspector.collapsed {
+            transform: translateX(395px);
+        }
+
+        .inspector-header {
+            padding: 13px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 10px 10px 0 0;
+        }
+
+        .inspector-title {
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 5px 9px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn:hover {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+        }
+
+        .btn.active {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+        }
+
+        #toggle-ui-btn {
+            position: fixed;
+            top: 18px;
+            right: 20px;
+            z-index: 9;
+            padding: 8px 12px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--accent);
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .inspector-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .inspector-body::-webkit-scrollbar { width: 6px; }
+        .inspector-body::-webkit-scrollbar-track { background: transparent; }
+        .inspector-body::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.18);
+            border-radius: 3px;
+        }
+
+        /* Accordion Sections */
+        details {
+            background: var(--bg-section);
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            margin-bottom: 8px;
+            overflow: hidden;
+        }
+
+        summary {
+            padding: 9px 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.03);
+            color: #cbd5e1;
+            list-style: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        summary::-webkit-details-marker { display: none; }
+        summary::after {
+            content: "▾";
+            font-size: 12px;
+            color: var(--text-muted);
+            transition: transform 0.2s;
+        }
+        details:not([open]) summary::after {
+            transform: rotate(-90deg);
+        }
+
+        .section-content {
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* Control Rows */
+        .control-row {
+            display: grid;
+            grid-template-columns: 135px 1fr 48px;
+            align-items: center;
+            gap: 8px;
+            font-size: 11.5px;
+        }
+
+        .control-row.color-row {
+            grid-template-columns: 140px 1fr;
+        }
+
+        .control-label {
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.14);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            border: 2px solid #0f172a;
+        }
+
+        .val-display {
+            font-family: "JetBrains Mono", "Fira Code", monospace;
+            font-size: 11px;
+            color: var(--text-main);
+            text-align: right;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        .color-picker-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: 1px solid var(--border);
+            width: 60px;
+            height: 22px;
+            border-radius: 4px;
+            background: none;
+            cursor: pointer;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 3px; }
+
+        /* HUD Info */
+        #hud {
+            position: fixed;
+            bottom: 14px;
+            left: 14px;
+            background: var(--bg-panel);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 11.5px;
+            color: var(--text-muted);
+            pointer-events: none;
+            display: flex;
+            gap: 14px;
+        }
+        #hud span strong { color: var(--text-main); }
+
+        #toast {
+            position: fixed;
+            bottom: 56px;
+            left: 14px;
+            background: var(--accent);
+            color: #000;
+            font-weight: 700;
+            font-size: 12px;
+            padding: 8px 14px;
+            border-radius: 6px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.25s;
+            pointer-events: none;
+        }
+        #toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- Top Day/Night Cycle Control Bar -->
+    <div id="time-bar">
+        <div class="clock-badge" id="clock-readout">☀️ 14:30</div>
+        <button class="btn active" id="play-cycle-btn" title="Toggle Automatic Day/Night Cycle">⏸ Auto-Cycle</button>
+        <div class="preset-group">
+            <button class="btn time-preset" data-hour="6.2">🌅 Sunrise</button>
+            <button class="btn time-preset" data-hour="12.5">☀️ Noon</button>
+            <button class="btn time-preset" data-hour="18.1">🌇 Sunset</button>
+            <button class="btn time-preset" data-hour="0.5">🌙 Midnight</button>
+        </div>
+    </div>
+
+    <button id="toggle-ui-btn">Show Inspector</button>
+
+    <div id="inspector">
+        <div class="inspector-header">
+            <div class="inspector-title">
+                <span>💧 StylizedWaterURP</span>
+            </div>
+            <div class="header-actions">
+                <button class="btn" id="copy-btn" title="Copy current properties for Unity">Copy Values</button>
+                <button class="btn" id="reset-btn">Reset</button>
+                <button class="btn" id="hide-btn">✕</button>
+            </div>
+        </div>
+        <div class="inspector-body" id="controls-root"></div>
+    </div>
+
+    <div id="hud">
+        <span><strong>LMB</strong> Orbit</span>
+        <span><strong>RMB</strong> Pan</span>
+        <span><strong>Scroll</strong> Zoom</span>
+        <span><strong>Cycle</strong> 24h Dynamic Sky + GI</span>
+    </div>
+
+    <div id="toast">Copied shader values to clipboard!</div>
+
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // ============================================================================
+        // 1. DEFAULT SHADER & DAY/NIGHT PROPERTIES
+        // ============================================================================
+        const SCHEMA = [
+            {
+                section: "Day & Night Cycle",
+                open: true,
+                items: [
+                    { key: "_TimeOfDay", label: "Time of Day (24h)", min: 0.0, max: 24.0, step: 0.05, val: 15.5 },
+                    { key: "_CycleSpeed", label: "Cycle Speed (h/s)", min: 0.0, max: 4.0, step: 0.05, val: 0.65 },
+                    { key: "_SunAzimuth", label: "Orbit Axis Angle", min: 0, max: 360, step: 1, val: 35 },
+                    { key: "_Exposure", label: "Light Intensity Mul", min: 0.2, max: 3.0, step: 0.05, val: 1.25 }
+                ]
+            },
+            {
+                section: "Depth and Water Level",
+                open: true,
+                items: [
+                    { key: "_MaxDepth", label: "Max Depth", min: 0.1, max: 50.0, step: 0.1, val: 10.0 },
+                    { key: "_WaterLevel", label: "Water Level (Y)", min: -5.0, max: 5.0, step: 0.05, val: 0.5 },
+                    { key: "_FadeStartDepth", label: "Fade Start Depth", min: 0.0, max: 20.0, step: 0.1, val: 0.5 }
+                ]
+            },
+            {
+                section: "Wave Parameters",
+                open: true,
+                items: [
+                    { key: "_SeaHeight", label: "Sea Height", min: 0.0, max: 5.0, step: 0.02, val: 0.65 },
+                    { key: "_SeaChoppy", label: "Sea Choppy", min: 0.0, max: 10.0, step: 0.1, val: 3.5 },
+                    { key: "_SeaSpeed", label: "Sea Speed", min: 0.0, max: 5.0, step: 0.05, val: 1.4 },
+                    { key: "_SeaFreq", label: "Sea Frequency", min: 0.01, max: 0.5, step: 0.005, val: 0.12 },
+                    { key: "_IterGeometry", label: "Iter Geometry", min: 1, max: 8, step: 1, val: 3, isInt: true },
+                    { key: "_IterFragment", label: "Iter Fragment", min: 1, max: 8, step: 1, val: 5, isInt: true }
+                ]
+            },
+            {
+                section: "Water Colors & Absorption",
+                open: true,
+                items: [
+                    { key: "_BaseTintColor", label: "Base Tint Color", type: "color", val: "#70f8ff" },
+                    { key: "_DeepColor", label: "Deep Color", type: "color", val: "#00574a" },
+                    { key: "_WaterAbsorption", label: "Absorption (RGB)", type: "color", val: "#4d0f05" }
+                ]
+            },
+            {
+                section: "Refraction and Normals",
+                open: false,
+                items: [
+                    { key: "_RefractionStrength", label: "Refraction Strength", min: 0.0, max: 2.0, step: 0.02, val: 1.0 },
+                    { key: "_RefractionDistanceFade", label: "Refraction Dist Fade", min: 0.0, max: 100.0, step: 0.5, val: 15.0 },
+                    { key: "_NormalEpsilon", label: "Normal Epsilon", min: 0.001, max: 0.5, step: 0.001, val: 0.02 },
+                    { key: "_NormalSmoothnessDist", label: "Normal Smooth Dist", min: 0.0, max: 300.0, step: 1.0, val: 50.0 }
+                ]
+            },
+            {
+                section: "Surface PBR",
+                open: false,
+                items: [
+                    { key: "_Roughness", label: "Roughness", min: 0.0, max: 1.0, step: 0.01, val: 0.07 },
+                    { key: "_Metallic", label: "Metallic", min: 0.0, max: 1.0, step: 0.01, val: 0.0 },
+                    { key: "_Specular", label: "Specular (F0)", min: 0.0, max: 0.25, step: 0.005, val: 0.02 }
+                ]
+            },
+            {
+                section: "Caustics",
+                open: false,
+                items: [
+                    { key: "_CausticsScale", label: "Caustics Scale", min: 0.1, max: 5.0, step: 0.05, val: 0.8 },
+                    { key: "_CausticsSpeed", label: "Caustics Speed", min: 0.0, max: 1.0, step: 0.01, val: 0.15 },
+                    { key: "_CausticsIntensity", label: "Caustics Intensity", min: 0.0, max: 2.0, step: 0.02, val: 0.8 },
+                    { key: "_CausticsDepthFade", label: "Caustics Depth Fade", min: 0.0, max: 1.0, step: 0.01, val: 0.35 }
+                ]
+            },
+            {
+                section: "Foam Layer 1 (Primary + Shadow)",
+                open: false,
+                items: [
+                    { key: "_FoamColor", label: "Foam Color", type: "color", val: "#ffffff" },
+                    { key: "_FoamEdgeColor", label: "Foam Edge Shadow", type: "color", val: "#051428" },
+                    { key: "_FoamDepthStart", label: "Foam Depth Start", min: 0.0, max: 5.0, step: 0.05, val: 1.1 },
+                    { key: "_FoamDepthEnd", label: "Foam Depth End", min: 0.0, max: 5.0, step: 0.05, val: 0.0 },
+                    { key: "_FoamNoiseScale", label: "Foam Noise Scale", min: 0.0, max: 5.0, step: 0.05, val: 1.1 },
+                    { key: "_FoamNoiseSpeed", label: "Foam Noise Speed", min: 0.0, max: 2.0, step: 0.02, val: 1.0 },
+                    { key: "_FoamCutoff", label: "Foam Cutoff", min: 0.0, max: 1.0, step: 0.01, val: 0.65 },
+                    { key: "_FoamEdgeOffsetX", label: "Shadow Offset X", min: -0.5, max: 0.5, step: 0.01, val: 0.12 },
+                    { key: "_FoamEdgeOffsetY", label: "Shadow Offset Z", min: -0.5, max: 0.5, step: 0.01, val: 0.12 },
+                    { key: "_VoronoiScale", label: "Voronoi Scale", min: 0.0, max: 25.0, step: 0.2, val: 4.5 },
+                    { key: "_VoronoiStrength", label: "Voronoi Strength", min: 0.0, max: 4.0, step: 0.05, val: 0.8 }
+                ]
+            },
+            {
+                section: "Foam Edge Variation (Wobble)",
+                open: false,
+                items: [
+                    { key: "_FoamEdgeWobble", label: "Wobble Amplitude", min: 0.0, max: 3.0, step: 0.02, val: 0.8 },
+                    { key: "_FoamEdgeWobbleScale", label: "Wobble Scale", min: 0.1, max: 10.0, step: 0.1, val: 0.9 },
+                    { key: "_FoamEdgeWobbleSpeed", label: "Wobble Speed", min: 0.0, max: 5.0, step: 0.05, val: 0.3 },
+                    { key: "_FoamEdgeWobbleWarp", label: "Wobble Warp", min: 0.0, max: 5.0, step: 0.05, val: 2.0 }
+                ]
+            },
+            {
+                section: "Foam Layer 2 (Secondary)",
+                open: false,
+                items: [
+                    { key: "_Foam2Color", label: "Foam 2 Color", type: "color", val: "#bff2ff" },
+                    { key: "_Foam2Opacity", label: "Foam 2 Opacity", min: 0.0, max: 1.0, step: 0.01, val: 0.8 },
+                    { key: "_Foam2DepthStart", label: "Foam 2 Depth Start", min: 0.0, max: 10.0, step: 0.05, val: 2.4 },
+                    { key: "_Foam2DepthEnd", label: "Foam 2 Depth End", min: 0.0, max: 10.0, step: 0.05, val: 0.4 },
+                    { key: "_Foam2NoiseScale", label: "Foam 2 Noise Scale", min: 0.0, max: 5.0, step: 0.05, val: 0.55 },
+                    { key: "_Foam2NoiseSpeed", label: "Foam 2 Noise Speed", min: 0.0, max: 2.0, step: 0.02, val: 0.5 },
+                    { key: "_Foam2Cutoff", label: "Foam 2 Cutoff", min: 0.0, max: 1.0, step: 0.01, val: 0.55 },
+                    { key: "_Foam2VoronoiScale", label: "Foam 2 Voronoi Scale", min: 0.0, max: 25.0, step: 0.2, val: 2.5 },
+                    { key: "_Foam2VoronoiStrength", label: "Foam 2 Voronoi Str", min: 0.0, max: 4.0, step: 0.05, val: 0.5 }
+                ]
+            }
+        ];
+
+        // ============================================================================
+        // 2. PROCEDURAL CAUSTICS TEXTURE GENERATOR
+        // ============================================================================
+        function createCausticsTexture() {
+            const size = 256;
+            const data = new Uint8Array(size * size * 4);
+            const numPoints = 28;
+            const pts = [];
+            for (let i = 0; i < numPoints; i++) {
+                pts.push({ x: Math.random(), y: Math.random() });
+            }
+
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const u = x / size;
+                    const v = y / size;
+                    let d1 = 99.0, d2 = 99.0;
+
+                    for (let i = 0; i < numPoints; i++) {
+                        let dx = Math.abs(u - pts[i].x);
+                        let dy = Math.abs(v - pts[i].y);
+                        if (dx > 0.5) dx = 1.0 - dx;
+                        if (dy > 0.5) dy = 1.0 - dy;
+                        const d = Math.sqrt(dx * dx + dy * dy);
+                        if (d < d1) { d2 = d1; d1 = d; }
+                        else if (d < d2) { d2 = d; }
+                    }
+
+                    const edge = Math.max(0.0, 1.0 - (d2 - d1) * 14.0);
+                    const c = Math.min(255, Math.floor(Math.pow(edge, 2.2) * 255));
+                    const idx = (y * size + x) * 4;
+                    data[idx] = c;
+                    data[idx + 1] = c;
+                    data[idx + 2] = c;
+                    data[idx + 3] = 255;
+                }
+            }
+
+            const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.needsUpdate = true;
+            return tex;
+        }
+
+        // ============================================================================
+        // 3. THREE.JS SCENE, SKY DOME & OFF-SCREEN RENDER TARGET
+        // ============================================================================
+        const container = document.getElementById('canvas-container');
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x162238, 0.006);
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.2, 400);
+        camera.position.set(18, 8, 22);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.target.set(0, 1.0, 0);
+        controls.maxPolarAngle = Math.PI * 0.49;
+
+        // Offscreen RenderTarget to capture _CameraOpaqueTexture and _CameraDepthTexture
+        const dpr = renderer.getPixelRatio();
+        const renderTarget = new THREE.WebGLRenderTarget(
+            window.innerWidth * dpr,
+            window.innerHeight * dpr
+        );
+        renderTarget.texture.minFilter = THREE.LinearFilter;
+        renderTarget.texture.magFilter = THREE.LinearFilter;
+        renderTarget.depthTexture = new THREE.DepthTexture();
+        renderTarget.depthTexture.type = THREE.UnsignedIntType;
+
+        // --- PROCEDURAL SKY DOME SHADER (Sun, Moon, Stars, Atmosphere) ---
+        const skyUniforms = {
+            _SunDir: { value: new THREE.Vector3(0, 1, 0) },
+            _MoonDir: { value: new THREE.Vector3(0, -1, 0) },
+            _SkyTop: { value: new THREE.Color(0x1e64b4) },
+            _SkyHorizon: { value: new THREE.Color(0x8cc8ff) },
+            _SkyBottom: { value: new THREE.Color(0x0b1320) },
+            _SunsetGlow: { value: new THREE.Color(0xff6b2b) },
+            _SunsetFactor: { value: 0.0 },
+            _StarIntensity: { value: 0.0 },
+            _Time: { value: 0.0 }
+        };
+
+        const skyGeo = new THREE.SphereGeometry(220, 48, 32);
+        const skyMat = new THREE.ShaderMaterial({
+            side: THREE.BackSide,
+            depthWrite: false,
+            uniforms: skyUniforms,
+            vertexShader: /* glsl */`
+                varying vec3 vWorldDir;
+                void main() {
+                    vWorldDir = position;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: /* glsl */`
+                precision highp float;
+                varying vec3 vWorldDir;
+
+                uniform vec3 _SunDir;
+                uniform vec3 _MoonDir;
+                uniform vec3 _SkyTop;
+                uniform vec3 _SkyHorizon;
+                uniform vec3 _SkyBottom;
+                uniform vec3 _SunsetGlow;
+                uniform float _SunsetFactor;
+                uniform float _StarIntensity;
+                uniform float _Time;
+
+                float hash31(vec3 p) {
+                    p = fract(p * vec3(443.897, 441.423, 437.195));
+                    p += dot(p, p.yzx + 19.19);
+                    return fract((p.x + p.y) * p.z);
+                }
+
+                void main() {
+                    vec3 dir = normalize(vWorldDir);
+                    float y = dir.y;
+
+                    // Vertical atmosphere gradient
+                    float upperMix = pow(clamp(y, 0.0, 1.0), 0.55);
+                    vec3 col = mix(_SkyHorizon, _SkyTop, upperMix);
+                    if (y < 0.0) {
+                        col = mix(_SkyHorizon, _SkyBottom, clamp(-y * 3.0, 0.0, 1.0));
+                    }
+
+                    // Sunset/Sunrise directional Mie scattering glow near horizon
+                    float sunDot = max(dot(dir, _SunDir), 0.0);
+                    float horizonBand = exp(-abs(y) * 5.5);
+                    float mieGlow = pow(sunDot, 3.0) * horizonBand * _SunsetFactor;
+                    col += _SunsetGlow * mieGlow * 1.15;
+
+                    // Sun Disc & Corona
+                    float sunDisc = smoothstep(0.9982, 0.9994, dot(dir, _SunDir));
+                    float sunCorona = pow(sunDot, 32.0) * 0.45 + pow(sunDot, 256.0) * 1.2;
+                    float aboveHorizon = smoothstep(-0.08, 0.04, _SunDir.y);
+                    col += (vec3(1.0, 0.92, 0.78) * sunCorona + vec3(1.8, 1.6, 1.3) * sunDisc) * aboveHorizon;
+
+                    // Moon Disc & Soft Lunar Halo
+                    float moonDot = max(dot(dir, _MoonDir), 0.0);
+                    float moonDisc = smoothstep(0.9986, 0.9993, dot(dir, _MoonDir));
+                    float moonHalo = pow(moonDot, 48.0) * 0.25;
+                    float moonAbove = smoothstep(-0.08, 0.04, _MoonDir.y);
+                    col += (vec3(0.55, 0.72, 1.0) * moonHalo + vec3(0.92, 0.96, 1.0) * moonDisc) * moonAbove;
+
+                    // Procedural Twinkling Starfield
+                    if (_StarIntensity > 0.01 && y > 0.0) {
+                        vec3 starGrid = floor(dir * 260.0);
+                        float h = hash31(starGrid);
+                        if (h > 0.9945) {
+                            float twinkle = 0.65 + 0.35 * sin(_Time * 2.5 + h * 100.0);
+                            float brightness = smoothstep(0.9945, 0.9999, h) * twinkle;
+                            float horizonFade = smoothstep(0.02, 0.28, y);
+                            col += vec3(0.85, 0.92, 1.0) * brightness * _StarIntensity * horizonFade * 1.6;
+                        }
+                    }
+
+                    gl_FragColor = vec4(col, 1.0);
+                }
+            `
+        });
+        const skyMesh = new THREE.Mesh(skyGeo, skyMat);
+        scene.add(skyMesh);
+
+        // Lighting for the Opaque Seabed Scene
+        const hemiLight = new THREE.HemisphereLight(0x8bb8e8, 0x263238, 0.75);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfff4e0, 1.8);
+        dirLight.position.set(20, 30, 15);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 1;
+        dirLight.shadow.camera.far = 110;
+        const dSize = 30;
+        dirLight.shadow.camera.left = -dSize;
+        dirLight.shadow.camera.right = dSize;
+        dirLight.shadow.camera.top = dSize;
+        dirLight.shadow.camera.bottom = -dSize;
+        scene.add(dirLight);
+
+        // Build Seabed & Objects
+        const seabedGroup = new THREE.Group();
+        scene.add(seabedGroup);
+
+        const terrainGeo = new THREE.PlaneGeometry(80, 80, 120, 120);
+        terrainGeo.rotateX(-Math.PI / 2);
+        const posAttr = terrainGeo.attributes.position;
+        const colors = [];
+        for (let i = 0; i < posAttr.count; i++) {
+            const x = posAttr.getX(i);
+            const z = posAttr.getZ(i);
+            const dist = Math.sqrt(x * x + z * z);
+
+            const island = 3.2 * Math.exp(-(dist * dist) / 38.0);
+            const ridge = 1.6 * Math.exp(-Math.pow(dist - 12.0, 2) / 14.0);
+            const bumps = 0.35 * Math.sin(x * 0.5) * Math.cos(z * 0.5);
+            const y = -4.5 + island + ridge + bumps;
+            posAttr.setY(i, y);
+
+            const c = new THREE.Color();
+            if (y > 0.6) c.setHex(0xd6c396);
+            else if (y > -1.5) c.setHex(0xc2ab78);
+            else c.setHex(0x6b705c);
+            colors.push(c.r, c.g, c.b);
+        }
+        terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        terrainGeo.computeVertexNormals();
+
+        const terrainMat = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            roughness: 0.85,
+            metalness: 0.05
+        });
+        const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
+        terrainMesh.receiveShadow = true;
+        seabedGroup.add(terrainMesh);
+
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0x646e78, roughness: 0.75 });
+        const rockPositions = [
+            { x: -5.5, y: 0.2, z: 3.5, s: 1.9 },
+            { x: 6.5, y: -0.3, z: -4.0, s: 2.3 },
+            { x: -3.0, y: 0.8, z: -5.5, s: 1.5 },
+            { x: 9.0, y: -0.8, z: 5.0, s: 2.6 },
+            { x: 0.0, y: 1.6, z: 0.0, s: 2.0 }
+        ];
+        rockPositions.forEach(rp => {
+            const rockGeo = new THREE.DodecahedronGeometry(rp.s, 1);
+            const rock = new THREE.Mesh(rockGeo, rockMat);
+            rock.position.set(rp.x, rp.y, rp.z);
+            rock.rotation.set(rp.x, rp.z, 0);
+            rock.castShadow = true;
+            rock.receiveShadow = true;
+            seabedGroup.add(rock);
+        });
+
+        const pillarMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 });
+        for (let i = 0; i < 5; i++) {
+            const pGeo = new THREE.BoxGeometry(0.9, 4.5, 0.9);
+            const pMesh = new THREE.Mesh(pGeo, pillarMat);
+            pMesh.position.set(-10 + i * 2.5, -1.8 + i * 0.45, 8.5);
+            pMesh.castShadow = true;
+            pMesh.receiveShadow = true;
+            seabedGroup.add(pMesh);
+        }
+
+        // ============================================================================
+        // 4. PORTED GLSL SHADER (Custom/StylizedWaterURP + Dynamic Sky GI)
+        // ============================================================================
+        const vertexShader = /* glsl */`
+            uniform float _Time;
+            uniform float _WaterLevel;
+            uniform float _SeaHeight;
+            uniform float _SeaChoppy;
+            uniform float _SeaSpeed;
+            uniform float _SeaFreq;
+            uniform int _IterGeometry;
+
+            varying vec3 vWorldVert;
+            varying vec3 vVertexNormalWorld;
+            varying vec4 vScreenPos;
+            varying vec3 vViewPos;
+
+            float hash12(vec2 p) {
+                uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334677u, 3812015801u);
+                uint n = (q.x ^ q.y) * 1597334677u;
+                return float(n) * (1.0 / 4294967295.0);
+            }
+
+            float noise(vec2 p) {
+                vec2 i = floor(p);
+                vec2 f = fract(p);
+                vec2 u = f * f * (3.0 - 2.0 * f);
+                return -1.0 + 2.0 * mix(
+                    mix(hash12(i + vec2(0.0, 0.0)), hash12(i + vec2(1.0, 0.0)), u.x),
+                    mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x),
+                    u.y
+                );
+            }
+
+            float sea_octave(vec2 uv, float choppy) {
+                uv += noise(uv);
+                vec2 wv = 1.0 - abs(sin(uv));
+                vec2 swv = abs(cos(uv));
+                wv = mix(wv, swv, wv);
+                return pow(max(0.0, 1.0 - pow(max(0.0, wv.x * wv.y), 0.65)), choppy);
+            }
+
+            const mat2 octave_m = mat2(1.6, -1.2, 1.2, 1.6);
+
+            float map_geom(vec3 p, float time) {
+                float freq = _SeaFreq;
+                float amp = _SeaHeight;
+                float choppy = _SeaChoppy;
+                vec2 uv = p.xz;
+                uv.x *= 0.75;
+                float h = 0.0;
+                for (int i = 0; i < 8; i++) {
+                    if (i >= _IterGeometry) break;
+                    float d = sea_octave((uv + time * _SeaSpeed) * freq, choppy);
+                    d += sea_octave((uv - time * _SeaSpeed) * freq, choppy);
+                    h += (d - 1.0) * amp;
+                    uv = octave_m * uv;
+                    freq *= 1.9;
+                    amp *= 0.22;
+                    choppy = mix(choppy, 1.0, 0.2);
+                }
+                return p.y - h;
+            }
+
+            void main() {
+                vec4 worldPos4 = modelMatrix * vec4(position, 1.0);
+                vec3 world_pos = worldPos4.xyz;
+
+                float h_pure = -map_geom(vec3(world_pos.x, 0.0, world_pos.z), _Time);
+                vec3 displacedWorldPos = vec3(world_pos.x, _WaterLevel + h_pure, world_pos.z);
+
+                float vertex_eps = 0.1;
+                float h_x_pure = -map_geom(vec3(world_pos.x + vertex_eps, 0.0, world_pos.z), _Time);
+                float h_z_pure = -map_geom(vec3(world_pos.x, 0.0, world_pos.z + vertex_eps), _Time);
+                vec3 normalWS = normalize(vec3(h_pure - h_x_pure, vertex_eps, h_pure - h_z_pure));
+
+                vWorldVert = displacedWorldPos;
+                vVertexNormalWorld = normalWS;
+
+                vec4 viewPos = viewMatrix * vec4(displacedWorldPos, 1.0);
+                vViewPos = viewPos.xyz;
+
+                vec4 clipPos = projectionMatrix * viewPos;
+                vScreenPos = clipPos;
+                gl_Position = clipPos;
+            }
+        `;
+
+        const fragmentShader = /* glsl */`
+            precision highp float;
+
+            uniform sampler2D _SceneColorTex;
+            uniform sampler2D _SceneDepthTex;
+            uniform sampler2D _CausticsTexture;
+
+            uniform float _Time;
+            uniform float _CameraNear;
+            uniform float _CameraFar;
+            uniform mat4 _InvProjMatrix;
+            uniform mat4 _InvViewMatrix;
+            uniform mat4 _ViewMatrix;
+
+            // Dynamic Day/Night Lighting Uniforms
+            uniform vec3 _LightDirWS;
+            uniform vec3 _LightColor;
+            uniform vec3 _SkyTopColor;
+            uniform vec3 _SkyHorizonColor;
+            uniform vec3 _AmbientSH;
+            uniform vec3 _FogColor;
+            uniform float _CausticsDayFactor;
+
+            // Material Uniforms
+            uniform float _MaxDepth;
+            uniform float _WaterLevel;
+            uniform float _FadeStartDepth;
+
+            uniform float _SeaHeight;
+            uniform float _SeaChoppy;
+            uniform float _SeaSpeed;
+            uniform float _SeaFreq;
+            uniform int _IterFragment;
+
+            uniform float _RefractionStrength;
+            uniform float _RefractionDistanceFade;
+            uniform float _NormalEpsilon;
+            uniform float _NormalSmoothnessDist;
+
+            uniform vec3 _BaseTintColor;
+            uniform vec3 _DeepColor;
+            uniform vec3 _WaterAbsorption;
+
+            uniform float _Roughness;
+            uniform float _Metallic;
+            uniform float _Specular;
+
+            uniform float _CausticsScale;
+            uniform float _CausticsSpeed;
+            uniform float _CausticsIntensity;
+            uniform float _CausticsDepthFade;
+
+            uniform vec3 _FoamColor;
+            uniform float _FoamDepthStart;
+            uniform float _FoamDepthEnd;
+            uniform float _FoamNoiseScale;
+            uniform float _FoamNoiseSpeed;
+            uniform float _FoamCutoff;
+            uniform vec3 _FoamEdgeColor;
+            uniform vec2 _FoamEdgeOffset;
+            uniform float _VoronoiScale;
+            uniform float _VoronoiStrength;
+
+            uniform float _FoamEdgeWobble;
+            uniform float _FoamEdgeWobbleScale;
+            uniform float _FoamEdgeWobbleSpeed;
+            uniform float _FoamEdgeWobbleWarp;
+
+            uniform vec3 _Foam2Color;
+            uniform float _Foam2Opacity;
+            uniform float _Foam2DepthStart;
+            uniform float _Foam2DepthEnd;
+            uniform float _Foam2NoiseScale;
+            uniform float _Foam2NoiseSpeed;
+            uniform float _Foam2Cutoff;
+            uniform float _Foam2VoronoiScale;
+            uniform float _Foam2VoronoiStrength;
+
+            varying vec3 vWorldVert;
+            varying vec3 vVertexNormalWorld;
+            varying vec4 vScreenPos;
+            varying vec3 vViewPos;
+
+            float saturate(float x) { return clamp(x, 0.0, 1.0); }
+
+            float LinearEyeDepth(float rawDepth) {
+                float z_ndc = rawDepth * 2.0 - 1.0;
+                return (2.0 * _CameraNear * _CameraFar) / (_CameraFar + _CameraNear - z_ndc * (_CameraFar - _CameraNear));
+            }
+
+            vec3 ComputeWorldSpacePosition(vec2 uv, float rawDepth) {
+                vec4 ndc = vec4(uv * 2.0 - 1.0, rawDepth * 2.0 - 1.0, 1.0);
+                vec4 viewPos = _InvProjMatrix * ndc;
+                viewPos /= viewPos.w;
+                vec4 worldPos = _InvViewMatrix * viewPos;
+                return worldPos.xyz;
+            }
+
+            // --- HASH & NOISE FUNCTIONS ---
+            vec2 hash22(vec2 p) {
+                vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+                p3 += dot(p3, p3.yzx + 33.33);
+                return fract((p3.xx + p3.yz) * p3.zy);
+            }
+
+            float voronoi(vec2 uv, float speed) {
+                vec2 n = floor(uv);
+                vec2 f = fract(uv);
+                float m_dist = 1.0;
+                for (int j = -1; j <= 1; j++) {
+                    for (int i = -1; i <= 1; i++) {
+                        vec2 g = vec2(float(i), float(j));
+                        vec2 o = hash22(n + g);
+                        o = 0.5 + 0.5 * sin(_Time * speed + 6.2831 * o);
+                        vec2 r = g - f + o;
+                        float d = dot(r, r);
+                        m_dist = min(m_dist, d);
+                    }
+                }
+                return m_dist;
+            }
+
+            float fbm_voronoi(vec2 uv, float speed) {
+                float v = 0.0;
+                float a = 0.5;
+                vec2 shift = vec2(100.0, 100.0);
+                float c = cos(0.5);
+                float s = sin(0.5);
+                mat2 rot = mat2(c, s, -s, c);
+
+                for (int i = 0; i < 3; i++) {
+                    float val = 1.0 - voronoi(uv, speed);
+                    val = val * val;
+                    v += a * val;
+                    uv = (rot * uv) * 2.0 + shift;
+                    a *= 0.5;
+                }
+                return v;
+            }
+
+            float hash12(vec2 p) {
+                uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334677u, 3812015801u);
+                uint n = (q.x ^ q.y) * 1597334677u;
+                return float(n) * (1.0 / 4294967295.0);
+            }
+
+            float noise(vec2 p) {
+                vec2 i = floor(p);
+                vec2 f = fract(p);
+                vec2 u = f * f * (3.0 - 2.0 * f);
+                return -1.0 + 2.0 * mix(
+                    mix(hash12(i + vec2(0.0, 0.0)), hash12(i + vec2(1.0, 0.0)), u.x),
+                    mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x),
+                    u.y
+                );
+            }
+
+            // --- SEA WAVE FUNCTIONS ---
+            float sea_octave(vec2 uv, float choppy) {
+                uv += noise(uv);
+                vec2 wv = 1.0 - abs(sin(uv));
+                vec2 swv = abs(cos(uv));
+                wv = mix(wv, swv, wv);
+                return pow(max(0.0, 1.0 - pow(max(0.0, wv.x * wv.y), 0.65)), choppy);
+            }
+
+            const mat2 octave_m = mat2(1.6, -1.2, 1.2, 1.6);
+
+            float map_detailed(vec3 p, float time) {
+                float freq = _SeaFreq;
+                float amp = _SeaHeight;
+                float choppy = _SeaChoppy;
+                vec2 uv = p.xz;
+                uv.x *= 0.75;
+                float h = 0.0;
+                for (int i = 0; i < 8; i++) {
+                    if (i >= _IterFragment) break;
+                    float d = sea_octave((uv + time * _SeaSpeed) * freq, choppy);
+                    d += sea_octave((uv - time * _SeaSpeed) * freq, choppy);
+                    h += (d - 1.0) * amp;
+                    uv = octave_m * uv;
+                    freq *= 1.9;
+                    amp *= 0.22;
+                    choppy = mix(choppy, 1.0, 0.2);
+                }
+                return p.y - h;
+            }
+
+            vec3 get_normal_detailed(vec3 p, float eps, float time) {
+                float h   = -map_detailed(vec3(p.x, 0.0, p.z), time);
+                float h_x = -map_detailed(vec3(p.x + eps, 0.0, p.z), time);
+                float h_z = -map_detailed(vec3(p.x, 0.0, p.z + eps), time);
+                vec3 n = vec3(h - h_x, eps, h - h_z);
+                return normalize(n);
+            }
+
+            void main() {
+                float time = _Time;
+                vec2 screen_uv = (vScreenPos.xy / vScreenPos.w) * 0.5 + 0.5;
+
+                float dist_to_cam = length(vViewPos);
+                float lod_epsilon = max(_NormalEpsilon, dist_to_cam * 0.005);
+                vec3 detailed_normal = get_normal_detailed(vWorldVert, lod_epsilon, time);
+                float smooth_factor = saturate((dist_to_cam - _NormalSmoothnessDist) / 200.0);
+
+                vec3 blended_normal = mix(detailed_normal, vVertexNormalWorld, smooth_factor);
+                vec3 final_normal_ws = (dot(blended_normal, blended_normal) > 1e-6)
+                    ? normalize(blended_normal)
+                    : normalize(vVertexNormalWorld);
+
+                vec3 view_normal = mat3(_ViewMatrix) * final_normal_ws;
+                vec3 view_vertex_normal = mat3(_ViewMatrix) * vVertexNormalWorld;
+
+                float water_linear_depth = -vViewPos.z;
+                float raw_depth = texture2D(_SceneDepthTex, screen_uv).r;
+                float bg_linear_depth = LinearEyeDepth(raw_depth);
+                float thickness = max(0.0, bg_linear_depth - water_linear_depth);
+
+                vec2 normal_offset = view_normal.xy - view_vertex_normal.xy;
+                float ref_dist_factor = saturate(_RefractionDistanceFade / max(0.1, dist_to_cam));
+                float ref_depth_mask = smoothstep(0.0, _MaxDepth, thickness);
+                vec2 refraction_offset = normal_offset * _RefractionStrength * ref_dist_factor * ref_depth_mask * 0.05;
+
+                vec2 distorted_uv = clamp(screen_uv + refraction_offset, vec2(0.001), vec2(0.999));
+
+                float raw_distorted_depth = texture2D(_SceneDepthTex, distorted_uv).r;
+                float distorted_bg_depth = LinearEyeDepth(raw_distorted_depth);
+                if (distorted_bg_depth < water_linear_depth - 0.001) {
+                    distorted_uv = screen_uv;
+                    distorted_bg_depth = bg_linear_depth;
+                    raw_distorted_depth = raw_depth;
+                }
+
+                vec3 screen_color = texture2D(_SceneColorTex, distorted_uv).rgb;
+                thickness = max(0.0, distorted_bg_depth - water_linear_depth);
+
+                float fade_range = max(0.001, _MaxDepth - _FadeStartDepth);
+                float depth_ratio = saturate((thickness - _FadeStartDepth) / fade_range);
+
+                // Caustics projection on seabed (modulated by day/night sunlight factor)
+                vec3 bg_world_pos = ComputeWorldSpacePosition(distorted_uv, raw_distorted_depth);
+                if (thickness > 0.0 && raw_distorted_depth < 0.9995) {
+                    vec2 caustics_uv1 = bg_world_pos.xz * _CausticsScale * 0.25;
+                    caustics_uv1.x += time * _CausticsSpeed;
+                    vec2 caustics_uv2 = bg_world_pos.xz * _CausticsScale * 0.175;
+                    caustics_uv2.y -= time * _CausticsSpeed * 0.8;
+
+                    float c1 = texture2D(_CausticsTexture, caustics_uv1).r;
+                    float c2 = texture2D(_CausticsTexture, caustics_uv2).r;
+                    float caustics_value = (c1 * c2) * 2.5;
+                    float caustics_fade = 1.0 - saturate(thickness * _CausticsDepthFade);
+                    screen_color += caustics_value * _CausticsIntensity * caustics_fade * _CausticsDayFactor * _LightColor;
+                }
+
+                // Beer-Lambert Absorption & Volume Tint
+                vec3 transmittance = exp(-thickness * _WaterAbsorption);
+                vec3 water_volume_color = mix(_BaseTintColor, _DeepColor, depth_ratio);
+                vec3 apparent_seabed_color = screen_color * water_volume_color;
+                vec3 albedo = mix(water_volume_color, apparent_seabed_color, transmittance);
+
+                // --- FOAM & ORGANIC WOBBLE ---
+                float foam_mask_primary = 0.0;
+                float foam_mask_shadow  = 0.0;
+
+                vec2 flow_uv = vWorldVert.xz * 0.5 + time * 0.05 * _FoamNoiseSpeed;
+                vec2 warp = vec2(
+                    noise(flow_uv),
+                    noise(flow_uv + vec2(5.2, 1.3))
+                ) * 0.5;
+
+                vec2 wobble_pos = vWorldVert.xz * _FoamEdgeWobbleScale;
+                vec2 big_warp = vec2(
+                    noise(wobble_pos * 0.15 + time * 0.07),
+                    noise(wobble_pos * 0.15 + vec2(19.1, 7.3) + time * 0.07)
+                ) * _FoamEdgeWobbleWarp;
+
+                wobble_pos += big_warp + warp * 3.0;
+
+                float wobble = 0.0;
+                float w_amp  = 1.0;
+                float w_freq = 1.0;
+                float w_norm = 0.0;
+                for (int w = 0; w < 3; w++) {
+                    wobble += noise(wobble_pos * w_freq + time * _FoamEdgeWobbleSpeed * w_freq) * w_amp;
+                    w_norm += w_amp;
+                    w_freq *= 2.17;
+                    w_amp  *= 0.55;
+                }
+                wobble /= max(w_norm, 0.0001);
+
+                float edge_wobble = wobble * _FoamEdgeWobble;
+                float organic_thickness = max(0.0, thickness + edge_wobble);
+
+                float depth_foam_factor = smoothstep(_FoamDepthStart, _FoamDepthEnd, organic_thickness);
+
+                if (distorted_bg_depth > water_linear_depth) {
+                    vec2 foam_warp = vec2(
+                        noise(vWorldVert.xz * 0.35 + time * 0.12),
+                        noise(vWorldVert.xz * 0.35 + vec2(11.3, 5.7) + time * 0.12)
+                    ) * 2.5;
+
+                    vec2 foam_uv = vWorldVert.xz * _FoamNoiseScale + warp * 2.0 + foam_warp;
+                    float foam_noise_val = fbm_voronoi(foam_uv, _FoamNoiseSpeed);
+
+                    vec2 shadow_jitter = vec2(
+                        noise(vWorldVert.xz * 3.0 + time * 0.25),
+                        noise(vWorldVert.xz * 3.0 + vec2(7.7, 2.1) + time * 0.25)
+                    ) * 0.015;
+
+                    vec2 foam_uv_shadow = (vWorldVert.xz + _FoamEdgeOffset + shadow_jitter) * _FoamNoiseScale + warp * 2.0 + foam_warp;
+                    float foam_noise_shadow_val = fbm_voronoi(foam_uv_shadow, _FoamNoiseSpeed);
+
+                    float combined_noise  = foam_noise_val * depth_foam_factor;
+                    float combined_shadow = foam_noise_shadow_val * depth_foam_factor;
+
+                    float threshold = 1.0 - _FoamCutoff;
+                    foam_mask_primary = smoothstep(threshold, threshold + 0.1, combined_noise);
+                    float shadow_shape = smoothstep(threshold - 0.05, threshold + 0.05, combined_shadow);
+                    foam_mask_shadow = saturate(shadow_shape - foam_mask_primary);
+                }
+
+                float voronoi_val = 1.0 - sqrt(voronoi(vWorldVert.xz * _VoronoiScale + warp, _FoamNoiseSpeed));
+                voronoi_val = smoothstep(0.2, 0.8, voronoi_val);
+                float bubble_alpha = 1.0 - saturate((1.0 - voronoi_val) * _VoronoiStrength);
+
+                // --- FOAM LAYER 2 ---
+                float foam2_mask = 0.0;
+                float foam2_bubble = 1.0;
+                if (distorted_bg_depth > water_linear_depth) {
+                    float foam2_depth_factor = smoothstep(_Foam2DepthStart, _Foam2DepthEnd, organic_thickness);
+
+                    vec2 foam2_warp = vec2(
+                        noise(vWorldVert.xz * 0.2 + time * 0.08 * _Foam2NoiseSpeed + vec2(31.7, 8.9)),
+                        noise(vWorldVert.xz * 0.2 + vec2(17.3, 23.1) + time * 0.08 * _Foam2NoiseSpeed)
+                    ) * 3.0;
+
+                    vec2 foam2_uv = vWorldVert.xz * _Foam2NoiseScale + warp * 2.0 + foam2_warp + vec2(47.0, 13.0);
+                    float foam2_noise_val = fbm_voronoi(foam2_uv, _Foam2NoiseSpeed) * foam2_depth_factor;
+
+                    float threshold2 = 1.0 - _Foam2Cutoff;
+                    foam2_mask = smoothstep(threshold2, threshold2 + 0.1, foam2_noise_val);
+
+                    float v2 = 1.0 - sqrt(voronoi(vWorldVert.xz * _Foam2VoronoiScale + warp + 13.7, _Foam2NoiseSpeed));
+                    v2 = smoothstep(0.2, 0.8, v2);
+                    foam2_bubble = 1.0 - saturate((1.0 - v2) * _Foam2VoronoiStrength);
+                }
+                float foam2_final = foam2_mask * foam2_bubble * _Foam2Opacity;
+
+                albedo = mix(albedo, _Foam2Color, foam2_final);
+                albedo = mix(albedo, _FoamEdgeColor, foam_mask_shadow);
+                albedo = mix(albedo, _FoamColor, foam_mask_primary * bubble_alpha);
+
+                float foam_amount = saturate((foam_mask_primary * bubble_alpha) + foam_mask_shadow + foam2_final);
+                float final_roughness = mix(max(_Roughness, 0.05), 0.8, foam_amount);
+
+                // --- URP-Equivalent GGX PBR Lighting + Dynamic Day/Night GI ---
+                vec3 N = final_normal_ws;
+                vec3 V = normalize(cameraPosition - vWorldVert);
+                vec3 L = normalize(_LightDirWS);
+                vec3 H = normalize(V + L);
+
+                float NdotL = max(dot(N, L), 0.0);
+                float NdotV = max(dot(N, V), 1e-4);
+                float NdotH = max(dot(N, H), 0.0);
+                float VdotH = max(dot(V, H), 0.0);
+
+                // Trowbridge-Reitz GGX
+                float a = final_roughness * final_roughness;
+                float a2 = max(a * a, 1e-4);
+                float denom = (NdotH * NdotH * (a2 - 1.0) + 1.0);
+                float D = a2 / (3.14159265 * denom * denom);
+
+                vec3 F0 = mix(vec3(_Specular), albedo, _Metallic);
+                vec3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+
+                float k = (final_roughness + 1.0);
+                k = (k * k) / 8.0;
+                float G = (NdotV / (NdotV * (1.0 - k) + k)) * (NdotL / (NdotL * (1.0 - k) + k));
+
+                vec3 specular = (D * F * G) / max(4.0 * NdotV * NdotL, 1e-4);
+
+                // Dynamic Sky Reflection Probe Approximation
+                vec3 R = reflect(-V, N);
+                float skyGrad = saturate(R.y * 0.5 + 0.5);
+                vec3 skyEnv = mix(_SkyHorizonColor, _SkyTopColor, skyGrad);
+                vec3 envFresnel = F0 + (max(vec3(1.0 - final_roughness), F0) - F0) * pow(1.0 - NdotV, 5.0);
+
+                vec3 diffuse = albedo * (1.0 - _Metallic);
+                vec3 ambient = diffuse * _AmbientSH + skyEnv * envFresnel * (1.0 - foam_amount * 0.85);
+                vec3 directLight = (diffuse * NdotL + specular * NdotL) * _LightColor;
+
+                vec3 color = ambient + directLight;
+
+                // Exponential Distance Fog matching current time of day
+                float fogFactor = 1.0 - exp(-0.006 * dist_to_cam);
+                color = mix(color, _FogColor, saturate(fogFactor * 0.65));
+
+                color = clamp(color, vec3(0.0), vec3(65000.0));
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+
+        // ============================================================================
+        // 5. CREATE WATER MESH & UNIFORMS
+        // ============================================================================
+        const causticsTex = createCausticsTexture();
+
+        const uniforms = {
+            _SceneColorTex: { value: renderTarget.texture },
+            _SceneDepthTex: { value: renderTarget.depthTexture },
+            _CausticsTexture: { value: causticsTex },
+            _Time: { value: 0 },
+            _CameraNear: { value: camera.near },
+            _CameraFar: { value: camera.far },
+            _InvProjMatrix: { value: new THREE.Matrix4() },
+            _InvViewMatrix: { value: new THREE.Matrix4() },
+            _ViewMatrix: { value: new THREE.Matrix4() },
+
+            _LightDirWS: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
+            _LightColor: { value: new THREE.Color(0xffffff) },
+            _SkyTopColor: { value: new THREE.Color(0x1e64b4) },
+            _SkyHorizonColor: { value: new THREE.Color(0x8cc8ff) },
+            _AmbientSH: { value: new THREE.Color(0x708090) },
+            _FogColor: { value: new THREE.Color(0x162238) },
+            _CausticsDayFactor: { value: 1.0 },
+
+            _MaxDepth: { value: 10.0 },
+            _WaterLevel: { value: 0.5 },
+            _FadeStartDepth: { value: 0.5 },
+
+            _SeaHeight: { value: 0.65 },
+            _SeaChoppy: { value: 3.5 },
+            _SeaSpeed: { value: 1.4 },
+            _SeaFreq: { value: 0.12 },
+            _IterGeometry: { value: 3 },
+            _IterFragment: { value: 5 },
+
+            _RefractionStrength: { value: 1.0 },
+            _RefractionDistanceFade: { value: 15.0 },
+            _NormalEpsilon: { value: 0.02 },
+            _NormalSmoothnessDist: { value: 50.0 },
+
+            _BaseTintColor: { value: new THREE.Color("#70f8ff") },
+            _DeepColor: { value: new THREE.Color("#00574a") },
+            _WaterAbsorption: { value: new THREE.Color("#4d0f05") },
+
+            _Roughness: { value: 0.07 },
+            _Metallic: { value: 0.0 },
+            _Specular: { value: 0.02 },
+
+            _CausticsScale: { value: 0.8 },
+            _CausticsSpeed: { value: 0.15 },
+            _CausticsIntensity: { value: 0.8 },
+            _CausticsDepthFade: { value: 0.35 },
+
+            _FoamColor: { value: new THREE.Color("#ffffff") },
+            _FoamDepthStart: { value: 1.1 },
+            _FoamDepthEnd: { value: 0.0 },
+            _FoamNoiseScale: { value: 1.1 },
+            _FoamNoiseSpeed: { value: 1.0 },
+            _FoamCutoff: { value: 0.65 },
+            _FoamEdgeColor: { value: new THREE.Color("#051428") },
+            _FoamEdgeOffset: { value: new THREE.Vector2(0.12, 0.12) },
+            _VoronoiScale: { value: 4.5 },
+            _VoronoiStrength: { value: 0.8 },
+
+            _FoamEdgeWobble: { value: 0.8 },
+            _FoamEdgeWobbleScale: { value: 0.9 },
+            _FoamEdgeWobbleSpeed: { value: 0.3 },
+            _FoamEdgeWobbleWarp: { value: 2.0 },
+
+            _Foam2Color: { value: new THREE.Color("#bff2ff") },
+            _Foam2Opacity: { value: 0.8 },
+            _Foam2DepthStart: { value: 2.4 },
+            _Foam2DepthEnd: { value: 0.4 },
+            _Foam2NoiseScale: { value: 0.55 },
+            _Foam2NoiseSpeed: { value: 0.5 },
+            _Foam2Cutoff: { value: 0.55 },
+            _Foam2VoronoiScale: { value: 2.5 },
+            _Foam2VoronoiStrength: { value: 0.5 }
+        };
+
+        const waterGeo = new THREE.PlaneGeometry(75, 75, 256, 256);
+        waterGeo.rotateX(-Math.PI / 2);
+
+        const waterMat = new THREE.ShaderMaterial({
+            vertexShader,
+            fragmentShader,
+            uniforms,
+            side: THREE.DoubleSide
+        });
+
+        const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+        scene.add(waterMesh);
+
+        // ============================================================================
+        // 6. DAY & NIGHT CYCLE ATMOSPHERIC CONTROLLER
+        // ============================================================================
+        const state = {};
+        const uiElements = {};
+        let autoCycle = true;
+
+        // Color Palettes for Day / Sunset / Night
+        const PALETTES = {
+            dayTop: new THREE.Color(0x1659b8),
+            dayHor: new THREE.Color(0x8ecaff),
+            sunsetTop: new THREE.Color(0x282354),
+            sunsetHor: new THREE.Color(0xf9733e),
+            nightTop: new THREE.Color(0x030712),
+            nightHor: new THREE.Color(0x0d1b33),
+
+            sunNoon: new THREE.Color(0xfff8eb),
+            sunGolden: new THREE.Color(0xff7733),
+            moonLight: new THREE.Color(0x7ca6e8),
+
+            shDay: new THREE.Color(0x7c90a6),
+            shSunset: new THREE.Color(0x6e4a58),
+            shNight: new THREE.Color(0x18263d)
+        };
+
+        function formatClock(hourFloat) {
+            const h = Math.floor(hourFloat) % 24;
+            const m = Math.floor((hourFloat - Math.floor(hourFloat)) * 60);
+            const padH = String(h).padStart(2, '0');
+            const padM = String(m).padStart(2, '0');
+            let icon = "☀️";
+            if (hourFloat < 5.5 || hourFloat >= 19.2) icon = "🌙";
+            else if (hourFloat < 7.2) icon = "🌅";
+            else if (hourFloat >= 17.2) icon = "🌇";
+            return `${icon} ${padH}:${padM}`;
+        }
+
+        function updateDayNightCycle(hour) {
+            // 06:00 = Sunrise (0 rad), 12:00 = Noon (PI/2), 18:00 = Sunset (PI), 00:00 = Midnight (-PI/2)
+            const solarAngle = ((hour - 6.0) / 24.0) * Math.PI * 2.0;
+            const azimuthRad = THREE.MathUtils.degToRad(state._SunAzimuth ?? 35);
+            const exposure = state._Exposure ?? 1.25;
+
+            const sinEl = Math.sin(solarAngle);
+            const cosEl = Math.cos(solarAngle);
+
+            const sunDir = new THREE.Vector3(
+                cosEl * Math.cos(azimuthRad),
+                sinEl,
+                cosEl * Math.sin(azimuthRad)
+            ).normalize();
+
+            const moonDir = sunDir.clone().negate();
+
+            skyUniforms._SunDir.value.copy(sunDir);
+            skyUniforms._MoonDir.value.copy(moonDir);
+
+            // Blend weights based on sun altitude (sinEl in [-1..1])
+            const dayWeight = THREE.MathUtils.smoothstep(sinEl, -0.05, 0.35);
+            const nightWeight = THREE.MathUtils.smoothstep(-sinEl, -0.02, 0.35);
+            const sunsetBand = Math.max(0.0, 1.0 - Math.abs(sinEl - 0.04) * 3.2);
+
+            // Sky Top & Horizon colors
+            const skyTop = new THREE.Color().lerpColors(PALETTES.nightTop, PALETTES.dayTop, dayWeight);
+            skyTop.lerp(PALETTES.sunsetTop, sunsetBand * 0.7);
+
+            const skyHor = new THREE.Color().lerpColors(PALETTES.nightHor, PALETTES.dayHor, dayWeight);
+            skyHor.lerp(PALETTES.sunsetHor, sunsetBand * 0.85);
+
+            skyUniforms._SkyTop.value.copy(skyTop);
+            skyUniforms._SkyHorizon.value.copy(skyHor);
+            skyUniforms._SunsetFactor.value = sunsetBand;
+            skyUniforms._StarIntensity.value = THREE.MathUtils.smoothstep(-sinEl, -0.05, 0.25);
+
+            // Active Directional Light (Smooth hand-off from Sun to Moon across twilight)
+            const activeDir = new THREE.Vector3();
+            const activeLightColor = new THREE.Color();
+
+            if (sinEl >= 0.0) {
+                activeDir.copy(sunDir);
+                const sunHue = new THREE.Color().lerpColors(PALETTES.sunGolden, PALETTES.sunNoon, THREE.MathUtils.smoothstep(sinEl, 0.0, 0.45));
+                const sunStrength = THREE.MathUtils.smoothstep(sinEl, 0.0, 0.15) * 1.45 * exposure;
+                activeLightColor.copy(sunHue).multiplyScalar(sunStrength);
+                uniforms._CausticsDayFactor.value = THREE.MathUtils.smoothstep(sinEl, 0.02, 0.25);
+            } else {
+                activeDir.copy(moonDir);
+                const moonStrength = THREE.MathUtils.smoothstep(-sinEl, 0.0, 0.2) * 0.45 * exposure;
+                activeLightColor.copy(PALETTES.moonLight).multiplyScalar(moonStrength);
+                uniforms._CausticsDayFactor.value = 0.08 * THREE.MathUtils.smoothstep(-sinEl, 0.0, 0.25);
+            }
+
+            // Clamp light elevation slightly above horizon so shadows don't break
+            if (activeDir.y < 0.08) {
+                activeDir.y = 0.08;
+                activeDir.normalize();
+            }
+
+            uniforms._LightDirWS.value.copy(activeDir);
+            uniforms._LightColor.value.copy(activeLightColor);
+            uniforms._SkyTopColor.value.copy(skyTop).multiplyScalar(exposure * 0.85);
+            uniforms._SkyHorizonColor.value.copy(skyHor).multiplyScalar(exposure * 0.85);
+
+            // Ambient Spherical Harmonics (`SampleSH`)
+            const shColor = new THREE.Color().lerpColors(PALETTES.shNight, PALETTES.shDay, dayWeight);
+            shColor.lerp(PALETTES.shSunset, sunsetBand * 0.6);
+            shColor.multiplyScalar(exposure * 0.75);
+            uniforms._AmbientSH.value.copy(shColor);
+
+            // Scene Fog & Seabed Three.js Lights
+            const fogCol = new THREE.Color().lerpColors(skyHor, skyTop, 0.35);
+            uniforms._FogColor.value.copy(fogCol);
+            scene.fog.color.copy(fogCol);
+
+            dirLight.position.copy(activeDir).multiplyScalar(38);
+            dirLight.color.copy(activeLightColor);
+            dirLight.intensity = 1.0;
+
+            hemiLight.color.copy(skyHor);
+            hemiLight.groundColor.copy(skyTop).multiplyScalar(0.4);
+            hemiLight.intensity = (0.3 + 0.55 * dayWeight + 0.15 * nightWeight) * exposure;
+
+            // Update Clock UI
+            document.getElementById('clock-readout').textContent = formatClock(hour);
+        }
+
+        // ============================================================================
+        // 7. BUILD UI SLIDERS & BIND TO UNIFORMS
+        // ============================================================================
+        const root = document.getElementById('controls-root');
+
+        function applyParam(item, value) {
+            state[item.key] = value;
+            if (item.key === "_TimeOfDay" || item.key === "_SunAzimuth" || item.key === "_Exposure") {
+                updateDayNightCycle(state._TimeOfDay ?? 15.5);
+                return;
+            }
+            if (item.key === "_CycleSpeed") return;
+            if (item.key === "_FoamEdgeOffsetX") {
+                uniforms._FoamEdgeOffset.value.x = value;
+                return;
+            }
+            if (item.key === "_FoamEdgeOffsetY") {
+                uniforms._FoamEdgeOffset.value.y = value;
+                return;
+            }
+            if (item.type === "color") {
+                uniforms[item.key].value.set(value);
+            } else {
+                uniforms[item.key].value = item.isInt ? parseInt(value, 10) : parseFloat(value);
+            }
+        }
+
+        function setTimeOfDaySlider(newHour) {
+            const wrapped = ((newHour % 24) + 24) % 24;
+            state._TimeOfDay = wrapped;
+            if (uiElements._TimeOfDay) {
+                uiElements._TimeOfDay.input.value = wrapped;
+                uiElements._TimeOfDay.display.textContent = wrapped.toFixed(2);
+            }
+            updateDayNightCycle(wrapped);
+        }
+
+        function buildUI() {
+            root.innerHTML = '';
+            SCHEMA.forEach(group => {
+                const details = document.createElement('details');
+                if (group.open) details.open = true;
+
+                const summary = document.createElement('summary');
+                summary.textContent = group.section;
+                details.appendChild(summary);
+
+                const content = document.createElement('div');
+                content.className = 'section-content';
+
+                group.items.forEach(item => {
+                    const row = document.createElement('div');
+                    row.className = item.type === 'color' ? 'control-row color-row' : 'control-row';
+
+                    const label = document.createElement('span');
+                    label.className = 'control-label';
+                    label.textContent = item.label;
+                    label.title = item.key;
+                    row.appendChild(label);
+
+                    if (item.type === 'color') {
+                        const wrap = document.createElement('div');
+                        wrap.className = 'color-picker-wrap';
+
+                        const hexText = document.createElement('span');
+                        hexText.className = 'val-display';
+                        hexText.textContent = item.val.toUpperCase();
+
+                        const input = document.createElement('input');
+                        input.type = 'color';
+                        input.value = item.val;
+                        input.addEventListener('input', e => {
+                            hexText.textContent = e.target.value.toUpperCase();
+                            applyParam(item, e.target.value);
+                        });
+
+                        wrap.appendChild(hexText);
+                        wrap.appendChild(input);
+                        row.appendChild(wrap);
+                        uiElements[item.key] = { input, display: hexText, item };
+                    } else {
+                        const input = document.createElement('input');
+                        input.type = 'range';
+                        input.min = item.min;
+                        input.max = item.max;
+                        input.step = item.step;
+                        input.value = item.val;
+
+                        const valDisplay = document.createElement('span');
+                        valDisplay.className = 'val-display';
+                        valDisplay.textContent = item.isInt ? item.val : Number(item.val).toFixed(2);
+
+                        input.addEventListener('input', e => {
+                            const v = item.isInt ? parseInt(e.target.value, 10) : parseFloat(e.target.value);
+                            valDisplay.textContent = item.isInt ? v : v.toFixed(2);
+                            applyParam(item, v);
+                        });
+
+                        row.appendChild(input);
+                        row.appendChild(valDisplay);
+                        uiElements[item.key] = { input, display: valDisplay, item };
+                    }
+
+                    applyParam(item, item.val);
+                    content.appendChild(row);
+                });
+
+                details.appendChild(content);
+                root.appendChild(details);
+            });
+        }
+
+        buildUI();
+
+        // Top Bar Controls (Auto-Cycle Toggle & Time Presets)
+        const playBtn = document.getElementById('play-cycle-btn');
+        playBtn.addEventListener('click', () => {
+            autoCycle = !autoCycle;
+            playBtn.classList.toggle('active', autoCycle);
+            playBtn.textContent = autoCycle ? "⏸ Auto-Cycle" : "▶ Auto-Cycle";
+        });
+
+        document.querySelectorAll('.time-preset').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetHour = parseFloat(btn.dataset.hour);
+                setTimeOfDaySlider(targetHour);
+            });
+        });
+
+        // Inspector Header Actions
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            Object.values(uiElements).forEach(({ input, display, item }) => {
+                input.value = item.val;
+                display.textContent = item.type === 'color'
+                    ? item.val.toUpperCase()
+                    : (item.isInt ? item.val : Number(item.val).toFixed(2));
+                applyParam(item, item.val);
+            });
+        });
+
+        document.getElementById('copy-btn').addEventListener('click', () => {
+            const lines = ["// Custom/StylizedWaterURP Inspector Values"];
+            Object.entries(state).forEach(([k, v]) => {
+                if (typeof v === 'string' && v.startsWith('#')) {
+                    const c = new THREE.Color(v);
+                    lines.push(`${k} = (${c.r.toFixed(3)}, ${c.g.toFixed(3)}, ${c.b.toFixed(3)}, 1.0)`);
+                } else {
+                    lines.push(`${k} = ${Number(v).toFixed(3)}`);
+                }
+            });
+            navigator.clipboard.writeText(lines.join('\n'));
+            const toast = document.getElementById('toast');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2200);
+        });
+
+        const inspector = document.getElementById('inspector');
+        document.getElementById('hide-btn').addEventListener('click', () => {
+            inspector.classList.add('collapsed');
+        });
+        document.getElementById('toggle-ui-btn').addEventListener('click', () => {
+            inspector.classList.remove('collapsed');
+        });
+
+        // ============================================================================
+        // 8. RENDER LOOP (Two-Pass Opaque + Transparent Queue + Day/Night Step)
+        // ============================================================================
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+
+            controls.update();
+
+            uniforms._Time.value = elapsed;
+            skyUniforms._Time.value = elapsed;
+            skyMesh.position.copy(camera.position);
+
+            // Advance Day/Night Cycle if Auto-Cycle is active
+            if (autoCycle && (state._CycleSpeed ?? 0.65) > 0) {
+                setTimeOfDaySlider((state._TimeOfDay ?? 15.5) + dt * (state._CycleSpeed ?? 0.65));
+            }
+
+            // Update camera matrices for depth & world position reconstruction
+            camera.updateMatrixWorld();
+            uniforms._InvProjMatrix.value.copy(camera.projectionMatrixInverse);
+            uniforms._InvViewMatrix.value.copy(camera.matrixWorld);
+            uniforms._ViewMatrix.value.copy(camera.matrixWorldInverse);
+
+            // PASS 1: Render sky dome + opaque seabed objects to offscreen Depth + Color target
+            waterMesh.visible = false;
+            renderer.setRenderTarget(renderTarget);
+            renderer.render(scene, camera);
+
+            // PASS 2: Render complete scene with StylizedWaterURP shader to screen
+            waterMesh.visible = true;
+            renderer.setRenderTarget(null);
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+
+            const ratio = renderer.getPixelRatio();
+            renderTarget.setSize(w * ratio, h * ratio);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
